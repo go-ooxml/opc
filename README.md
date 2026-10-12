@@ -13,9 +13,58 @@ rels, err := p.Rels(main)          // what that part points at
 target, err := p.Resolve(main, rels[0])
 ```
 
-It is the layer **below** a format reader. What it knows is how to find a part
-and what a part says it is; what the parts *mean* is WordprocessingML's
-business, or SpreadsheetML's, or PresentationML's.
+and the other direction:
+
+```go
+b, err := opc.Build([]opc.NewPart{
+    {Name: "word/document.xml", ContentType: wordMain, Data: doc},
+    {Name: "word/styles.xml", Data: styles},      // .xml already has a Default
+}, map[string][]opc.Rel{
+    "":                  {{ID: "rId1", Type: opc.RelOfficeDocument, Target: "word/document.xml"}},
+    "word/document.xml": {{ID: "rId1", Type: relStyles, Target: "styles.xml"}},
+})
+```
+
+It is the layer **below** a format reader or writer. What it knows is how to
+find a part and what a part says it is; what the parts *mean* is
+WordprocessingML's business, or SpreadsheetML's, or PresentationML's.
+
+## Building one
+
+`Build` writes the content types part and every relationships part itself,
+because where those go is a **rule and not a choice** — `_rels/.rels` beside
+the package, `word/_rels/document.xml.rels` beside the part. It refuses the two
+names it writes, since a second copy would contradict the first.
+
+It also refuses four packages that would open and then fail to say anything, in
+whatever program the file was written for rather than here:
+
+| | |
+|---|---|
+| a part name with `..` in it | which escapes the package |
+| the same part twice | where the second would be unreachable |
+| a relationship from a part that is not there | a dangling edge nothing can resolve |
+| no package relationships at all | a package nothing points into has no main part, and that is where every reader starts |
+
+⛔ **The same package twice is the same bytes.** A map walk is random, and a
+writer whose output changes between runs cannot be diffed, cached or signed.
+The test builds eight relationship sources and compares five times: with three
+sources a map walk comes out in the right order one time in six, and the test
+reported a determinism that was not there.
+
+⛔ **Two things are asserted by their spelling** rather than by being read
+back, which is the opposite of how everything else here is checked: an
+`Override`'s `PartName` starts with a slash, and the `.rels` Default is
+present. Our own reader accepts a package without either, so reading it back
+proves nothing — and the programs that refuse such a package are the ones
+nothing here can run. The control is a `.docx` Word itself produced, which
+carries both.
+
+## ⛔ The control for the writer is the reader
+
+Every other test builds a package and then opens it with `Open`. A writer
+checked against a string of expected XML is checked against what its author
+believed; the thing that has to be true is that it can be **read**.
 
 ## ⛔ Nothing here is found by its path
 
